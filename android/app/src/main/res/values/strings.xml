@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MCP Shabbat Board</string>
+    <string name="title_activity_main">MCP Shabbat Board</string>
+    <string name="package_name">com.michal.mcpboard</string>
+    <string name="custom_url_scheme">com.michal.mcpboard</string>
+</resources>
