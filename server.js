@@ -94,6 +94,10 @@ function fetchTzevaAdomAlerts() {
                                             type = "nonConventional";
                                             title = "אירוע לא קונבנציונלי";
                                             break;
+                                        case 10: // התווסף זיהוי של קוד 10!
+                                            type = "endOfEvent";
+                                            title = "סיום אירוע";
+                                            break;
                                         default:
                                             type = "missiles";
                                             title = "ירי רקטות וטילים";
