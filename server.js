@@ -3,16 +3,25 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const https = require('https');
-const cors = require('cors'); // הוספה
+const cors = require('cors');
 
 const app = express();
-app.use(cors()); // הוספה
+app.use(cors());
 
+// יצירת שרת ה-HTTP
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { 
+    cors: { origin: "*" } 
+});
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'www', 'index.html')));
-app.use(express.static(path.join(__dirname, 'www')));
+// הגדרת תיקיית www כתיקייה סטטית (חשוב עבור קבצי CSS/JS של הלוח)
+const wwwPath = path.join(__dirname, 'www');
+app.use(express.static(wwwPath));
+
+// ניתוב ה-URL הראשי לקובץ index.html שבתוך תיקיית www
+app.get('/', (req, res) => {
+    res.sendFile(path.join(wwwPath, 'index.html'));
+});
 
 io.on('connection', (socket) => {
     console.log('🖥️ לוח חכם התחבר לשרת הנתונים בהצלחה!');
@@ -46,12 +55,16 @@ function fetchOrefAlerts() {
                 try {
                     const alertData = JSON.parse(cleanBody);
                     processRawAlert(alertData);
-                } catch (e) { }
+                } catch (e) {
+                    // התעלמות משגיאות JSON (בדרך כלל דף ריק)
+                }
             }
         });
     });
 
-    req.on('error', (e) => { console.error('Oref Fetch Error:', e.message); }); 
+    req.on('error', (e) => { 
+        // שגיאה בחיבור לאתר פיקוד העורף
+    }); 
     req.setTimeout(2000, () => req.abort());
     req.end();
 }
@@ -74,28 +87,40 @@ function processRawAlert(alertData) {
                 "10": "endOfEvent", "11": "missiles", "13": "preAlert"
             };
 
-            if (title.includes("סתיים")) {
+            if (title.includes("סתיים") || catStr === "10") {
                 threatType = 'endOfEvent';
             } else if (catMap[catStr]) {
                 threatType = catMap[catStr];
             }
 
+            // יצירת מזהה ייחודי כדי לא לשלוח את אותה התראה פעמיים באותו רגע
             const alertId = alert.id || (threatType + "-" + locations.join(','));
 
             if (!activeAlerts.has(alertId)) {
                 activeAlerts.add(alertId);
-                console.log(`🚨 אזעקה: ${title} ב-${locations.join(', ')}`);
-                io.emit('alert', { type: threatType, title: title, desc: desc, cities: locations });
+                console.log(`🚨 אזעקה פעילה: ${title} ב-${locations.join(', ')}`);
+                
+                // שליחת ההתראה לכל הלוחות המחוברים
+                io.emit('alert', { 
+                    type: threatType, 
+                    title: title, 
+                    desc: desc, 
+                    cities: locations 
+                });
+
+                // מחיקה מהזיכרון אחרי 3 דקות כדי לאפשר קבלת התראה חדשה באותו מקום
                 setTimeout(() => activeAlerts.delete(alertId), 180000);
             }
         }
     });
 }
 
+// בדיקת התראות כל 2 שניות
 setInterval(fetchOrefAlerts, 2000);
 
-// עדכון פורט עבור Render
+// הגדרת פורט גמיש (חשוב עבור Render/Heroku)
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 השרת רץ בפורט ${PORT}`);
+    console.log(`🚀 השרת עלה בהצלחה ומאזין בפורט ${PORT}`);
+    console.log(`🔗 ניתן לגשת ללוח בכתובת: https://mcp-shabbat-board.onrender.com}`);
 });
