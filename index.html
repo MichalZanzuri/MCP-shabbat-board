@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>לוח חכם - משה זנזורי</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <style>
+        :root { 
+            --gold: #d4af37; --bg: #000; --card: #141414; --border: #2a2a2a; --red: #e74c3c;
+        }
+        
+        body, html { 
+            background-color: var(--bg); 
+            color: #fff; 
+            font-family: 'Assistant', sans-serif; 
+            margin: 0; 
+            height: 100dvh; 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column; 
+            padding-top: env(safe-area-inset-top, 0px);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            box-sizing: border-box;
+        }
+
+        .top-system-bar { width: 100%; height: 42px; background: #0d0d0d; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; box-sizing: border-box; border-bottom: 1px solid #1a1a1a; z-index: 1000; flex-shrink: 0;}
+        .update-time { font-size: 0.85rem; color: #555; font-weight: 600; }
+        .status-area { display: flex; align-items: center; gap: 10px; color: #888; font-weight: 700; font-size: 0.95rem; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background: #e74c3c; box-shadow: 0 0 10px #e74c3c; transition: 0.3s; }
+        .status-dot.connected { background: #2ecc71; box-shadow: 0 0 10px #2ecc71; }
+
+        .alert-banner-overlay { position: absolute; top: env(safe-area-inset-top, 0px); left: 0; width: 100%; height: 42px; background: var(--red); display: none; align-items: center; justify-content: center; z-index: 1001; font-weight: 900; font-size: 1.3rem; color: #fff; animation: blink-bg 0.8s infinite; }
+        @keyframes blink-bg { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.3); } }
+
+        #top-section { flex-shrink: 0; width: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 2vh; }
+        .clock { font-size: clamp(6rem, 15vw, 15rem); font-weight: 800; line-height: 0.9; margin: 0; letter-spacing: -4px; font-variant-numeric: tabular-nums; text-align: center; }
+        .dates-row { font-size: clamp(1.2rem, 3vw, 2.5rem); color: #ccc; margin-bottom: 1.5vh; text-align: center; width: 100%; }
+        
+        .weather-row { display: flex; width: 95%; max-width: 800px; margin-bottom: 1.5vh; align-items: stretch; gap: 4px; padding: 0; box-sizing: border-box; flex-shrink: 0; justify-content: center;}
+        .weather-item { flex: 1; background: rgba(255,255,255,0.03); padding: 8px 5px; text-align: center; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; min-width: 0; }
+        .weather-item.now { background: rgba(212,175,55,0.12); border: 1px solid var(--gold); z-index: 5; transform: scale(1.05); }
+        .w-icon-anim { font-size: clamp(1.5rem, 3vw, 2.2rem); line-height: 1; margin-bottom: 4px; }
+        .w-temp { font-size: clamp(1rem, 2vw, 1.3rem); font-weight: 400; }
+        .weather-item.now .w-temp { font-size: clamp(1.2rem, 2.5vw, 1.6rem); color: var(--gold); font-weight: 800; }
+        .w-time { font-size: 0.8rem; color: #888; margin-top: 4px; }
+
+        .grid-container { display: flex; width: 95%; max-width: 1400px; gap: 15px; justify-content: center; margin: 0 auto 1.5vh auto; box-sizing: border-box; flex-shrink: 0; align-items: stretch;}
+        .box { flex: 1; background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid var(--border); min-width: 0; display: flex; flex-direction: column;}
+        .box h2 { color: var(--gold); font-size: 1.1rem; text-align: center; margin: 0 0 10px 0; border-bottom: 1px solid #333; padding-bottom: 4px; font-weight: 800; flex-shrink: 0;}
+        .box-content { flex-grow: 1; display: flex; flex-direction: column; justify-content: space-around; }
+        .line { display: flex; justify-content: space-between; margin: 4px 0; font-size: 1.1rem; color: #ccc; align-items: center;}
+
+        .alerts-widget { flex-grow: 1; background: #141414; margin: 0 15px 15px 15px; border-radius: 12px; border: 1px solid var(--border); padding: 12px; display: flex; flex-direction: column; min-height: 0; position: relative; max-width: 1600px; align-self: center; width: calc(100% - 30px); box-sizing: border-box;}
+        .alerts-content { display: flex; gap: 12px; flex-grow: 1; min-height: 0; flex-direction: row; }
+        
+        @media (max-width: 768px) {
+            .grid-container { flex-direction: column; gap: 8px; }
+            .alerts-content { flex-direction: column-reverse; }
+            .frame-left, .frame-right { flex: none; height: 50%; min-height: 250px; }
+        }
+
+        .frame-right { flex: 1.5; background: #0a0a0a; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; border: 1px solid #222; position: relative; min-height: 0;}
+        #alert-list { flex-grow: 1; overflow-y: auto; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-content: start; scrollbar-width: thin; scrollbar-color: #333 #0a0a0a; padding-bottom: 5px; }
+        #alert-list::-webkit-scrollbar { width: 6px; }
+        #alert-list::-webkit-scrollbar-track { background: #0a0a0a; }
+        #alert-list::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+
+        .frame-left { flex: 1; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #222; position: relative; min-height: 0;}
+        #map { width: 100%; height: 100%; filter: invert(1) hue-rotate(180deg) brightness(0.8); z-index: 1;}
+
+        .alert-card { background: linear-gradient(90deg, #111 0%, rgba(255, 255, 255, 0.03) 100%); border-right: 6px solid var(--red); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: inset -40px 0 40px -40px var(--red); height: fit-content;}
+        .ac-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap;}
+        .ac-threat-line { font-size: clamp(0.9rem, 2vw, 1.2rem); font-weight: 800; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;}
+        .ac-threat-line span.title-text { overflow: hidden; text-overflow: ellipsis; }
+        .ac-time-box { background: #1a1a1a; padding: 4px 8px; border-radius: 6px; font-size: clamp(0.7rem, 1.5vw, 0.85rem); color: #aaa; border: 1px solid #333; display: flex; gap: 4px; font-family: monospace; white-space: nowrap; flex-shrink: 0;}
+        .ac-cities { color: #ccc; font-size: 0.95rem; line-height: 1.4; text-align: right; margin-top: 5px; }
+
+        .clear-alerts-btn { display: none; background: #1a1a1a; border: 1px solid #333; color: #777; padding: 10px; border-radius: 8px; justify-content: center; align-items: center; cursor: pointer; transition: 0.3s; flex-shrink: 0; gap: 8px; margin-top: 10px; font-family: 'Assistant', sans-serif; font-weight: 700;}
+        .clear-alerts-btn:hover { background: rgba(231, 76, 60, 0.1); color: #e74c3c; border-color: #e74c3c; }
+
+        .fab-wrap { position: fixed; top: calc(55px + env(safe-area-inset-top, 0px)); left: 15px; z-index: 500; display: flex; flex-direction: column; gap: 10px; }
+        .fab-main { width: 44px; height: 44px; border-radius: 50%; background: #1a1a1a; border: 1px solid #333; color: #777; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.3s; box-shadow: 0 0 15px rgba(0,0,0,0.5);}
+        .fab-main:hover { border-color: var(--gold); color: var(--gold); }
+
+        #main-modal { position:fixed; inset:0; z-index:2000; display:none; flex-direction:column; background:#131313; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+        .s-topbar { height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #222; flex-shrink: 0;}
+        .s-body { flex: 1; overflow-y: auto; padding: 20px; max-width: 800px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+        .s-card { background: #0e0e0e; border: 1px solid #222; border-radius: 15px; padding: 20px; margin-bottom: 20px; }
+        .s-tabs { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 20px; background: #0d0d0d; flex-shrink: 0;}
+        .s-tab { padding: 8px 16px; border-radius: 20px; border: none; background: #222; color: #888; cursor: pointer; font-weight: 700; }
+        .s-tab.active { background: var(--gold); color: #000; }
+        
+        .zone-chip { padding: 6px 14px; border-radius: 20px; border: 1px solid #333; cursor: pointer; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 5px; margin: 4px; transition: 0.2s;}
+        .zone-chip.selected { background: rgba(212,175,55,0.2); border-color: var(--gold); color: var(--gold); }
+        
+        .checkbox-label { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; cursor: pointer; font-size: 1.05rem; }
+        .checkbox-label input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--gold); }
+
+        select, input, button { font-family: inherit; }
+
+        @keyframes mapPulse { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(3); opacity: 0; } }
+        .pulse-marker { position: relative; width: 16px; height: 16px; border-radius: 50%; z-index: 1000;}
+        .pulse-marker::after { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; border-radius: 50%; animation: mapPulse 1.5s ease-out infinite; background: inherit; }
+    </style>
+</head>
+<body>
+
+<div class="top-system-bar">
+    <div class="update-time" id="last-update">טוען נתונים...</div>
+    <div class="status-area">
+        <span id="banner-routine-text">מערכת התראות פיקוד העורף: שגרה</span>
+        <div id="socket-dot" class="status-dot"></div>
+    </div>
+</div>
+
+<div id="alert-banner-top" class="alert-banner-overlay"></div>
+
+<div class="fab-wrap">
+    <div class="fab-main" onclick="openSettings()">⚙️</div>
+</div>
+
+<div id="top-section">
+    <div class="clock" id="clock">00:00</div>
+    <div class="dates-row" id="dates-display">טוען תאריך...</div>
+    <div class="weather-row" id="weather-display"></div>
+</div>
+
+<div class="grid-container">
+    <div class="box" id="box-moed">
+        <h2>פרטי מועד</h2>
+        <div id="moed-content" class="box-content"></div>
+    </div>
+    <div class="box" id="box-zmanim">
+        <h2>זמני היום</h2>
+        <div id="zmanim-content" class="box-content"></div>
+    </div>
+</div>
+
+<div class="alerts-widget">
+    <div class="alerts-content">
+        <div class="frame-right">
+            <div id="alert-list">
+                <div id="empty-msg" style="color:#444; text-align:center; margin-top:50px; grid-column: 1 / -1;">אין התראות כרגע</div>
+            </div>
+            <div class="clear-alerts-btn" id="btn-clear-alerts" onclick="clearAlerts()" title="נקה התראות">
+                <span class="material-symbols-outlined">delete</span>
+                <span>נקה היסטוריית התראות</span>
+            </div>
+        </div>
+        <div class="frame-left"><div id="map"></div></div>
+    </div>
+</div>
+
+<div id="main-modal" dir="rtl">
+    <div class="s-topbar">
+        <button onclick="closeSettings()" style="background:none;border:none;color:var(--gold);cursor:pointer;"><span class="material-symbols-outlined">arrow_forward</span></button>
+        <span style="font-weight:800;color:var(--gold);font-size:1.2rem;">הגדרות המערכת</span>
+        <button onclick="saveSettings()" style="background:var(--gold);color:#000;border:none;padding:8px 20px;border-radius:8px;font-weight:800;cursor:pointer;">שמור</button>
+    </div>
+    <div class="s-tabs">
+        <button class="s-tab active" id="stab-calendar" onclick="showTab('calendar')">לוח שנה וזמנים</button>
+        <button class="s-tab" id="stab-alerts" onclick="showTab('alerts')">התראות ובאנר</button>
+        <button class="s-tab" id="stab-general" onclick="showTab('general')">כללי</button>
+        <button class="s-tab" id="stab-dev" onclick="showTab('dev')">מתקדם (דמו)</button>
+    </div>
+    <div class="s-body">
+        
+        <div id="tab-calendar">
+            <div class="s-card">
+                <div style="font-weight:800; color:var(--gold); margin-bottom:15px;">שיטת חישוב זמנים הבסיסית</div>
+                <select id="cfg-cal-source" onchange="renderHebcalOpts()" style="width:100%; padding:10px; background:#111; color:#fff; border:1px solid #333; border-radius:8px; margin-bottom: 10px;">
+                    <option value="hebcal">Hebcal (מותאם אישית)</option>
+                    <option value="sephardi">ספרדי (חזון שמיים)</option>
+                    <option value="orhachaim">אור החיים (בעל התניא)</option>
+                </select>
+                <div style="font-size:0.9rem; margin-bottom:5px; color:#aaa;">דקות הדלקת נרות לפני שקיעה:</div>
+                <input type="number" id="cfg-candle-min" value="18" style="padding:8px; background:#111; border:1px solid #333; color:#fff; border-radius:5px; width:80px;">
+            </div>
+            
+            <div class="s-card">
+                <div style="font-weight:800; color:var(--gold); margin-bottom:15px; border-bottom: 1px solid #333; padding-bottom: 5px;">הצגה בפרטי המועד (ימין)</div>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-parasha"> פרשת השבוע</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-shabbat"> זמני כניסת/יציאת שבת וחג</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-holidays"> חגים ומועדים (פסח, סוכות וכו')</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-roshchodesh"> ראשי חודשים</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-fasts"> צומות (כולל זמני כניסה ויציאה)</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-chanukah"> חנוכה ופורים</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-national"> חגים לאומיים (עצמאות, ירושלים)</label>
+            </div>
+
+            <div class="s-card">
+                <div style="font-weight:800; color:var(--gold); margin-bottom:15px; border-bottom: 1px solid #333; padding-bottom: 5px;">הצגה בזמני היום (שמאל)</div>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-sunrise"> נץ החמה / זריחה</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-sunset"> שקיעה</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-dafyomi"> הדף היומי</label>
+                <label class="checkbox-label"><input type="checkbox" id="tgl-omer"> ספירת העומר</label>
+            </div>
+        </div>
+
+        <div id="tab-alerts" style="display:none;">
+            <div class="s-card">
+                <div style="font-weight:800; color:var(--gold); margin-bottom:5px;">הוספת עיר/אזור להתראה אישית (באנר וצליל)</div>
+                <div style="font-size:0.85rem; color:#aaa; margin-bottom:15px;">אם לא ייבחרו אזורים, הבאנר יקפוץ עבור כל הארץ. המפה והרשימה תמיד מציגות הכל.</div>
+                
+                <div style="display:flex; gap:10px; margin-bottom: 15px; margin-top: 10px;">
+                    <input type="text" id="city-search" list="cities-list" placeholder="הקלד עיר או אזור..." style="flex:1; padding:10px; border-radius:8px; border:1px solid #333; background:#111; color:#fff;">
+                    <datalist id="cities-list"></datalist>
+                    <button onclick="addCityToBanner()" style="padding:10px 20px; background:var(--gold); color:#000; border:none; border-radius:8px; font-weight:800; cursor:pointer;">הוסף</button>
+                </div>
+                <div id="selected-cities-chips" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+            </div>
+            <div class="s-card">
+                <div style="font-weight:800; color:var(--gold); margin-bottom:10px;">סוג צליל התראה לבאנר</div>
+                <select id="cfg-sound-mode" onchange="toggleCustomSound()" style="width:100%; padding:10px; background:#111; color:#fff; border:1px solid #333; border-radius:8px; margin-bottom: 10px;">
+                    <option value="silent">שקט (ללא צליל)</option>
+                    <option value="tts">הקראה קולית של ההתראה (TTS)</option>
+                    <option value="siren">צליל אזעקה מובנה</option>
+                    <option value="bell">צליל התראה עדין</option>
+                    <option value="custom">העלאת קובץ קול אישי...</option>
+                </select>
+                <div id="custom-sound-upload" style="display:none; margin-top: 10px; padding: 10px; background: #1a1a1a; border-radius: 8px;">
+                    <input type="file" id="sound-file" accept="audio/*" onchange="handleSoundUpload(event)" style="color: #ccc; width: 100%;">
+                    <div id="upload-status" style="font-size: 0.8rem; color: #2ecc71; margin-top: 5px;"></div>
+                </div>
+                <button onclick="testPlaySound()" style="margin-top:10px; padding:8px 15px; border-radius:6px; background:#222; border:1px solid #444; color:#fff; cursor:pointer;">▶️ בדיקת צליל</button>
+            </div>
+        </div>
+
+        <div id="tab-general" style="display:none;">
+            <div class="s-card">
+                <div style="font-weight:800; color:var(--gold); margin-bottom:10px;">עיר מגורים (לזמנים ומזג אוויר)</div>
+                <select id="cfg-main-city" style="width:100%; padding:10px; background:#111; color:#fff; border:1px solid #333; border-radius:8px;">
+                    <option value="bneibrak">בני ברק</option>
+                    <option value="jerusalem">ירושלים</option>
+                    <option value="telaviv">תל אביב</option>
+                    <option value="ashdod">אשדוד</option>
+                    <option value="haifa">חיפה</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="tab-dev" style="display:none;">
+            <div class="s-card">
+                <button onclick="testAlertPre()" style="width:100%; padding:12px; border-radius:8px; background:rgba(241, 196, 15, 0.15); border:1px solid #f1c40f; color:#f1c40f; font-weight:bold; cursor:pointer; margin-bottom:10px;">דמו: התראה מקדימה (צהוב)</button>
+                <button onclick="testAlertMultiple()" style="width:100%; padding:12px; border-radius:8px; background:rgba(231, 76, 60, 0.15); border:1px solid #e74c3c; color:#e74c3c; font-weight:bold; cursor:pointer; margin-bottom:10px;">דמו: ירי רקטות ענק (אדום)</button>
+                <button onclick="testAlertEnd()" style="width:100%; padding:12px; border-radius:8px; background:rgba(46, 204, 113, 0.15); border:1px solid #2ecc71; color:#2ecc71; font-weight:bold; cursor:pointer;">דמו: סיום אירוע (ירוק ומנקה מפה)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const citiesData = { "bneibrak": { lat: 32.0849, lon: 34.8352 }, "jerusalem": { lat: 31.7683, lon: 35.2137 }, "telaviv": { lat: 32.0853, lon: 34.7818 }, "ashdod": { lat: 31.8044, lon: 34.6559 }, "haifa": { lat: 32.8191, lon: 34.9983 } };
+    
+    let config = { 
+        city: "bneibrak", calendarSource: "hebcal", hebcalCandleMin: 18, bannerZones: [], soundMode: "silent", customSoundData: null,
+        showParasha: true, showShabbat: true, showHolidays: true, showRoshchodesh: true, 
+        showFasts: true, showChanukah: true, showNational: true,
+        showSunrise: true, showSunset: true, showDafyomi: true, showOmer: true
+    };
+    
+    const THREAT_TYPES = {
+        "missiles": { icon: "rocket_launch", color: "#e74c3c" },
+        "hostileAircraftIntrusion": { icon: "air", color: "#e74c3c" },
+        "preAlert": { icon: "warning", color: "#f1c40f" },
+        "endOfEvent": { icon: "check_circle", color: "#2ecc71" },
+        "earthQuake": { icon: "earthquake", color: "#3b82f6" },
+        "radiologicalEvent": { icon: "radioactive", color: "#9b59b6" },
+        "hazardousMaterials": { icon: "skull", color: "#e67e22" },
+        "terroristInfiltration": { icon: "personal_injury", color: "#e74c3c" },
+        "nonConventional": { icon: "warning", color: "#8e44ad" },
+        "drill_missiles": { icon: "rocket_launch", color: "#888" },
+        "unknown": { icon: "campaign", color: "#e74c3c" } 
+    };
+
+    const CITY_REGION_MAP = {
+        "גוש דן": ["תל אביב", "רמת גן", "בני ברק", "גבעתיים", "חולון", "בת ים", "אור יהודה", "קריית אונו", "יהוד", "מקוה ישראל"],
+        "ירקון": ["פתח תקווה", "ראש העין", "אלעד", "כפר קאסם", "הוד השרון", "רמת השרון", "ג'לג'וליה", "כפר ברא"],
+        "השרון": ["נתניה", "חדרה", "כפר סבא", "רעננה", "הרצליה", "כפר שמריהו", "אבן יהודה", "קדימה", "צורן"],
+        "השפלה": ["ראשון לציון", "רחובות", "נס ציונה", "לוד", "רמלה", "יבנה", "באר יעקב", "גדרה", "בית שמש", "מודיעין"],
+        "שומרון": ["אריאל", "עמנואל", "קרני שומרון", "קדומים", "אורנית", "אלקנה", "שערי תקווה", "ברקן"],
+        "יהודה": ["ביתר עילית", "אפרת", "קרית ארבע", "חברון", "גוש עציון"],
+        "ירושלים והסביבה": ["ירושלים", "מעלה אדומים", "מבשרת ציון", "אבו גוש"],
+        "לכיש": ["אשדוד", "אשקלון", "קריית מלאכי", "קריית גת", "שדרות"],
+        "עוטף עזה": ["נתיבות", "ניר עם", "מפלסים", "כפר עזה", "בארי", "נחל עוז", "זיקים", "כרמיה", "יד מרדכי"],
+        "מערב הנגב": ["אופקים", "מרחבים", "אשכול", "אורים"],
+        "מרכז הנגב": ["באר שבע", "ירוחם", "דימונה", "נבטים", "חצרים", "עומר", "להבים", "מיתר"],
+        "דרום הנגב": ["מצפה רמון", "שדה בוקר", "עבדת", "פארן"],
+        "הערבה": ["אילת", "יטבתה", "סמר", "גרופית", "אליפז", "קטורה"],
+        "ים המלח": ["עין גדי", "נווה זוהר", "מצדה", "קליה", "אלמוג"],
+        "בקעת הירדן": ["בית שאן", "מחולה", "שדמות מחולה", "רועי"],
+        "קו העימות": ["קריית שמונה", "מטולה", "שלומי", "נהריה", "דישון", "מלכיה", "מרגליות", "משגב עם", "כפר יובל"],
+        "גליל עליון": ["צפת", "חצור הגלילית", "ראש פינה", "טבריה", "מירון", "קצרין"],
+        "המפרץ": ["חיפה", "קריית אתא", "קריית ביאליק", "קריית מוצקין", "קריית ים", "טירת כרמל", "נשר", "עכו"]
+    };
+
+    const ZONE_TIMES = { "עוטף עזה": 15, "קו העימות": 15, "לכיש": 45, "המפרץ": 60, "גליל עליון": 60, "גוש דן": 90, "השפלה": 90, "השרון": 90, "ירקון": 90, "ירושלים והסביבה": 90, "שומרון": 90, "יהודה": 90, "מרכז הנגב": 90, "הערבה": 180 };
+    const ZONE_COORDS = { "גוש דן": [32.08, 34.78], "ירקון": [32.10, 34.90], "השרון": [32.25, 34.87], "השפלה": [31.90, 34.87], "שומרון": [32.15, 35.15], "יהודה": [31.60, 35.10], "ירושלים והסביבה": [31.76, 35.21], "לכיש": [31.65, 34.63], "עוטף עזה": [31.45, 34.48], "הנגב": [31.25, 34.79], "קו העימות": [33.20, 35.55], "גליל עליון": [32.96, 35.50], "המפרץ": [32.81, 35.00], "התראה ביטחונית": [31.5, 34.8] };
+    const CITY_COORDS = { "תל אביב - יפו": [32.0853, 34.7818], "רמת גן": [32.0823, 34.8121], "בני ברק": [32.0849, 34.8352], "ירושלים": [31.7683, 35.2137], "חיפה": [32.8191, 34.9983], "אשדוד": [31.8044, 34.6559], "אשקלון": [31.6693, 34.5715], "שדרות": [31.5235, 34.5956] };
+
+    function populateDatalist() {
+        const allPlaces = new Set();
+        Object.keys(CITY_REGION_MAP).forEach(zone => {
+            allPlaces.add(zone);
+            CITY_REGION_MAP[zone].forEach(city => allPlaces.add(city));
+        });
+        document.getElementById('cities-list').innerHTML = Array.from(allPlaces).map(p => `<option value="${p}">`).join('');
+    }
+
+    function getZoneByCity(cityName) {
+        if (!cityName) return "התראה ביטחונית";
+        for (const [zone, citiesList] of Object.entries(CITY_REGION_MAP)) {
+            if (citiesList.some(c => cityName.includes(c) || c.includes(cityName))) return zone;
+        }
+        return cityName; 
+    }
+
+    function groupCitiesByZone(citiesArray) {
+        const groups = {};
+        citiesArray.forEach(city => {
+            const zone = getZoneByCity(city);
+            if (!groups[zone]) groups[zone] = [];
+            groups[zone].push(city);
+        });
+        return groups;
+    }
+
+    function stripNikud(str) { return str ? str.replace(/[\u0591-\u05C7]/g, "") : ""; }
+    function fmtTime(iso) { return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }); }
+
+    function clearAlerts() {
+        const list = document.getElementById('alert-list');
+        list.innerHTML = '<div id="empty-msg" style="color:#444; text-align:center; margin-top:50px; grid-column: 1 / -1;">אין התראות כרגע</div>';
+        list.classList.remove('multi-col'); 
+        if (markerLayer) markerLayer.clearLayers();
+        document.getElementById('btn-clear-alerts').style.display = 'none';
+    }
+
+    function playAlertAudio(title, zonesArray) {
+        if (config.soundMode === 'silent') return;
+        try {
+            if (config.soundMode === 'tts' && 'speechSynthesis' in window) {
+                const text = `התראת פיקוד העורף. ${title}, באזורים: ${zonesArray.join(', ')}`;
+                const msg = new SpeechSynthesisUtterance(text);
+                msg.lang = 'he-IL'; msg.rate = 0.9;
+                window.speechSynthesis.speak(msg);
+            } else if (config.soundMode === 'siren') {
+                new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(e=>{});
+            } else if (config.soundMode === 'bell') {
+                new Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3').play().catch(e=>{});
+            } else if (config.soundMode === 'custom' && config.customSoundData) {
+                new Audio(config.customSoundData).play().catch(e=>{});
+            }
+        } catch(e) {}
+    }
+
+    function testPlaySound() { playAlertAudio("בדיקת מערכת", ["גוש דן"]); }
+
+    function handleSoundUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (file.size > 2000000) { alert("הקובץ גדול מדי. אנא העלה קובץ קטן מ-2MB."); return; }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            config.customSoundData = e.target.result;
+            document.getElementById('upload-status').innerText = "✓ הקובץ הועלה בהצלחה!";
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async function updateData() {
+        const now = new Date();
+        const city = citiesData[config.city] || citiesData.bneibrak;
+        try {
+            const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&hourly=temperature_2m,weathercode&timezone=Asia%2FJerusalem&forecast_days=2`);
+            const wData = await wRes.json();
+            let wHtml = '';
+            for (let i = 0; i < 6; i++) {
+                const idx = (now.getHours() + i) % 48;
+                wHtml += `<div class="weather-item ${i===0?'now':''}">
+                    <div class="w-time">${i===0?'עכשיו':((now.getHours()+i)%24)+':00'}</div>
+                    <span class="w-icon-anim material-symbols-outlined ${i===0?'active-anim anim-sun':''}">light_mode</span>
+                    <div class="w-temp">${Math.round(wData.hourly.temperature_2m[idx])}°</div>
+                </div>`;
+            }
+            document.getElementById('weather-display').innerHTML = wHtml;
+
+            const nextWeek = new Date(now);
+            nextWeek.setDate(now.getDate() + 6);
+            const startISO = now.toISOString().split('T')[0];
+            const endISO = nextWeek.toISOString().split('T')[0];
+
+            const [convRes, zRes, calRes] = await Promise.all([
+                fetch(`https://www.hebcal.com/converter?cfg=json&gy=${now.getFullYear()}&gm=${now.getMonth()+1}&gd=${now.getDate()}&g2h=1&lg=h`),
+                fetch(`https://www.hebcal.com/zmanim?cfg=json&latitude=${city.lat}&longitude=${city.lon}&date=${startISO}`),
+                fetch(`https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=on&mod=on&nx=on&mf=on&ss=on&s=on&F=on&leyning=off&c=on&b=${config.hebcalCandleMin}&M=on&geo=pos&latitude=${city.lat}&longitude=${city.lon}&start=${startISO}&end=${endISO}&lg=h`)
+            ]);
+            
+            const convData = await convRes.json();
+            const zData = await zRes.json();
+            const calData = await calRes.json();
+            const allItems = calData.items || [];
+
+            const todayItems = allItems.filter(i => i.date.startsWith(startISO));
+            const futureItems = allItems.filter(i => i.date > startISO && i.date <= endISO);
+
+            document.getElementById('dates-display').innerText = `יום ${['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'][now.getDay()]} | ${stripNikud(convData.hebrew)} | ${now.toLocaleDateString('he-IL')}`;
+            
+            let zHtml = '';
+            if(config.showSunrise !== false) zHtml += `<div class="line"><span>נץ החמה:</span><span>${fmtTime(zData.times.sunrise)}</span></div>`;
+            if(config.showSunset !== false) zHtml += `<div class="line"><span>שקיעה:</span><span>${fmtTime(zData.times.sunset)}</span></div>`;
+            todayItems.forEach(i => {
+                if(i.category === 'dafyomi' && config.showDafyomi !== false) zHtml += `<div class="line"><span>דף יומי:</span><span style="color:var(--gold);">${i.hebrew}</span></div>`;
+                if(i.category === 'omer' && config.showOmer !== false) zHtml += `<div class="line"><span>ספירת העומר:</span><span style="color:var(--gold);">${i.hebrew}</span></div>`;
+            });
+            document.getElementById('zmanim-content').innerHTML = zHtml || '<div class="line" style="justify-content:center; color:#666;">אין זמנים מיוחדים</div>';
+
+            let mHtml = '';
+            const fasts = todayItems.filter(i => i.category === 'holiday' && (i.title.includes('צום') || i.title.includes('תענית') || i.title.includes('עשרה בטבת') || i.title.includes('י"ז בתמוז') || i.title.includes('צום גדליה')));
+            if(config.showFasts !== false && fasts.length > 0) {
+                mHtml += `<div class="line"><span style="color:var(--red);font-weight:700;">${fasts[0].hebrew}</span></div>`;
+                mHtml += `<div class="line"><span>כניסת הצום (עלות):</span><span style="color:var(--red);">${fmtTime(zData.times.alotHaShachar)}</span></div>`;
+                mHtml += `<div class="line"><span>יציאת הצום (צאת):</span><span style="color:var(--red);">${fmtTime(zData.times.tzeit7083deg)}</span></div>`;
+            }
+
+            const rc = todayItems.filter(i => i.category === 'roshchodesh');
+            if(config.showRoshchodesh !== false && rc.length > 0) mHtml += `<div class="line"><span style="color:var(--gold);font-weight:700;">${rc[0].hebrew}</span></div>`;
+
+            const holidays = todayItems.filter(i => i.category === 'holiday' && !fasts.includes(i));
+            holidays.forEach(h => {
+                const isNational = h.title.includes('העצמאות') || h.title.includes('ירושלים');
+                const isChanukahPurim = h.title.includes('חנוכה') || h.title.includes('פורים');
+                if (isNational && config.showNational === false) return;
+                if (isChanukahPurim && config.showChanukah === false) return;
+                if (!isNational && !isChanukahPurim && config.showHolidays === false) return;
+                mHtml += `<div class="line"><span style="color:var(--gold);font-weight:700;">${h.hebrew}</span></div>`;
+            });
+
+            if(config.showParasha !== false) {
+                const p = allItems.find(i => i.category === 'parashat');
+                if(p) mHtml += `<div class="line"><span>פרשת השבוע:</span><span style="color:var(--gold);">${p.hebrew}</span></div>`;
+            }
+            if(config.showShabbat !== false) {
+                const c = allItems.find(i => i.category === 'candles');
+                const h = allItems.find(i => i.category === 'havdalah');
+                if(c) mHtml += `<div class="line"><span>הדלקת נרות:</span><span style="color:var(--gold);">${fmtTime(c.date)}</span></div>`;
+                if(h) mHtml += `<div class="line"><span>צאת שבת/חג:</span><span style="color:var(--gold);">${fmtTime(h.date)}</span></div>`;
+            }
+
+            const upcomingTitles = [];
+            futureItems.forEach(i => {
+                if (i.category === 'holiday' || i.category === 'roshchodesh') {
+                    const isNational = i.title.includes('העצמאות') || i.title.includes('ירושלים');
+                    const isChanukahPurim = i.title.includes('חנוכה') || i.title.includes('פורים');
+                    const isFast = i.title.includes('צום') || i.title.includes('תענית');
+                    if (isNational && config.showNational === false) return;
+                    if (isChanukahPurim && config.showChanukah === false) return;
+                    if (isFast && config.showFasts === false) return;
+                    if (!isNational && !isChanukahPurim && !isFast && config.showHolidays === false && i.category !== 'roshchodesh') return;
+                    if (i.category === 'roshchodesh' && config.showRoshchodesh === false) return;
+                    upcomingTitles.push(i.hebrew);
+                }
+            });
+            
+            const uniqueUpcoming = [...new Set(upcomingTitles)];
+            if(uniqueUpcoming.length > 0) {
+                mHtml += `<div style="margin-top:8px; border-top:1px solid #333; padding-top:6px; text-align:center;">
+                    <div style="font-size:0.9rem; color:#aaa; margin-bottom:2px;">השבוע יחול:</div>
+                    <div style="color:var(--gold); font-weight:700; font-size:1rem; line-height:1.2;">${uniqueUpcoming.join(', ')}</div>
+                </div>`;
+            }
+
+            document.getElementById('moed-content').innerHTML = mHtml || '<div class="line" style="justify-content:center; color:#666;">אין מועדים מיוחדים</div>';
+            document.getElementById('last-update').innerText = `עודכן ב: ${now.toLocaleTimeString('he-IL')} ${now.toLocaleDateString('he-IL')}`;
+        } catch (e) { console.error(e); }
+    }
+
+    let map, markerLayer;
+    function initMap() {
+        map = L.map('map', { zoomControl: false, attributionControl: false }).setView([31.5, 34.8], 7);
+        L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=iw', { maxZoom: 18 }).addTo(map);
+        markerLayer = L.featureGroup().addTo(map);
+        setTimeout(() => { map.invalidateSize(); }, 500);
+    }
+
+    const socket = io("http://localhost:3000");
+    socket.on("connect", () => {
+        document.getElementById('socket-dot').classList.add('connected');
+        document.getElementById('banner-routine-text').innerText = "מערכת מחוברת: מאזין להתראות";
+    });
+    socket.on("disconnect", () => {
+        document.getElementById('socket-dot').classList.remove('connected');
+        document.getElementById('banner-routine-text').innerText = "מערכת מנותקת: מנסה להתחבר...";
+    });
+
+    let bannerInterval; 
+
+    socket.on("alert", (data) => processAlert(data));
+
+    function processAlert(data) {
+        const type = data.type || "unknown";
+        const title = data.title || "התראה ביטחונית";
+        const desc = data.desc || "";
+        const cities = data.cities || [];
+        if (cities.length === 0) return;
+
+        const uiConfig = THREAT_TYPES[type] || THREAT_TYPES.unknown;
+        const groupedZones = groupCitiesByZone(cities);
+        const uniqueZones = Object.keys(groupedZones);
+        const primaryZone = uniqueZones[0] || "התראה ביטחונית";
+
+        document.getElementById('btn-clear-alerts').style.display = 'flex';
+
+        let shouldTriggerBannerAndSound = false;
+        if (!config.bannerZones || config.bannerZones.length === 0) {
+            shouldTriggerBannerAndSound = true; 
+        } else {
+            shouldTriggerBannerAndSound = uniqueZones.some(z => config.bannerZones.includes(z)) || cities.some(c => config.bannerZones.includes(c));
+        }
+
+        if (shouldTriggerBannerAndSound) {
+            playAlertAudio(title, uniqueZones);
+            
+            clearInterval(bannerInterval);
+            const banner = document.getElementById('alert-banner-top');
+            banner.style.background = uiConfig.color;
+            banner.style.display = 'flex';
+            
+            let timeLeft = ZONE_TIMES[primaryZone] || 90; 
+            
+            function updateBannerText() {
+                let timeText = timeLeft > 0 ? `(זמן התגוננות: ${timeLeft} שניות)` : `(הישארו במרחב המוגן)`;
+                if (type === "preAlert" || type === "endOfEvent") timeText = ""; 
+                banner.innerHTML = `<span class="material-symbols-outlined" style="margin-left:10px;font-size:1.8rem;">${uiConfig.icon}</span> ${title}: ${uniqueZones.join(', ')} <span style="margin-right:10px; font-weight:400; opacity:0.9;">${timeText}</span>`;
+            }
+            
+            updateBannerText();
+            if (type !== "preAlert" && type !== "endOfEvent") {
+                bannerInterval = setInterval(() => {
+                    timeLeft--;
+                    updateBannerText();
+                    if (timeLeft < -600) clearInterval(bannerInterval); 
+                }, 1000);
+            }
+            
+            setTimeout(() => { banner.style.display = 'none'; clearInterval(bannerInterval); }, 180000); 
+        }
+
+        const list = document.getElementById('alert-list');
+        const empty = document.getElementById('empty-msg'); if(empty) empty.remove();
+        
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = now.toLocaleDateString('he-IL');
+
+        if (type === "preAlert" || type === "endOfEvent") {
+            const isEnd = type === "endOfEvent";
+            const mainText = isEnd ? `האירוע הסתיים באזורים: ${uniqueZones.join(', ')}` : `התרעה מקדימה באזורים: ${uniqueZones.join(', ')}`;
+
+            const card = document.createElement('div');
+            card.className = 'alert-card';
+            card.style.borderRightColor = uiConfig.color;
+            card.style.boxShadow = `inset -40px 0 40px -40px ${uiConfig.color}`;
+            
+            card.innerHTML = `
+                <div class="ac-header">
+                    <div class="ac-threat-line" style="color:${uiConfig.color};">
+                        <span class="material-symbols-outlined">${uiConfig.icon}</span> <span class="title-text">${title}</span>
+                    </div>
+                    <div class="ac-time-box"><span>${dateStr}</span> <span style="margin:0 4px;">|</span> <span>${timeStr}</span></div>
+                </div>
+                ${desc ? `<div style="font-size:0.85rem; color:#aaa; margin-top:2px; margin-bottom:4px;">${desc}</div>` : ''}
+                <div class="ac-cities" style="color:#fff; font-weight:bold; font-size:1.05rem;">${mainText}</div>`;
+                
+            list.insertBefore(card, list.firstChild);
+
+            if (isEnd && markerLayer) markerLayer.clearLayers();
+        } 
+        else {
+            uniqueZones.forEach(zone => {
+                const zoneCities = groupedZones[zone];
+                const card = document.createElement('div');
+                card.className = 'alert-card';
+                card.style.borderRightColor = uiConfig.color;
+                card.style.boxShadow = `inset -40px 0 40px -40px ${uiConfig.color}`;
+                
+                card.innerHTML = `
+                    <div class="ac-header">
+                        <div class="ac-threat-line" style="color:${uiConfig.color};">
+                            <span class="material-symbols-outlined">${uiConfig.icon}</span> 
+                            <span class="title-text">${title} - ${zone}</span>
+                        </div>
+                        <div class="ac-time-box"><span>${dateStr}</span> <span style="margin:0 4px;">|</span> <span>${timeStr}</span></div>
+                    </div>
+                    ${desc ? `<div style="font-size:0.85rem; color:#aaa; margin-top:2px;">${desc}</div>` : ''}
+                    <div class="ac-cities">${zoneCities.join(' • ')}</div>`;
+                    
+                list.insertBefore(card, list.firstChild);
+            });
+        }
+
+        while (list.children.length > 40) list.removeChild(list.lastChild);
+        if (list.children.length >= 5) list.classList.add('multi-col');
+
+        if (type !== "endOfEvent") {
+            const alertCoordsList = [];
+            cities.forEach(city => {
+                let coords = CITY_COORDS[city];
+                if (!coords) {
+                    const zone = getZoneByCity(city);
+                    const baseCoords = ZONE_COORDS[zone] || ZONE_COORDS["התראה ביטחונית"];
+                    coords = [baseCoords[0] + (Math.random() - 0.5) * 0.05, baseCoords[1] + (Math.random() - 0.5) * 0.05];
+                }
+                alertCoordsList.push(coords);
+                const marker = L.marker(coords, { icon: L.divIcon({ html: `<div class="pulse-marker" style="background:${uiConfig.color};"></div>`, className: '' }) }).addTo(markerLayer);
+                setTimeout(() => { if(markerLayer && markerLayer.hasLayer(marker)) markerLayer.removeLayer(marker); }, 120000);
+            });
+
+            if (alertCoordsList.length > 0) {
+                if (alertCoordsList.length === 1) map.flyTo(alertCoordsList[0], 10, { duration: 1.5 });
+                else map.flyToBounds(L.latLngBounds(alertCoordsList), { padding: [30, 30], maxZoom: 10, duration: 1.5 });
+            }
+        }
+    }
+
+    function openSettings() { 
+        document.getElementById('main-modal').style.display = 'flex'; 
+        populateDatalist();
+        renderSelectedCities();
+        loadCheckboxes();
+        document.getElementById('cfg-candle-min').value = config.hebcalCandleMin || 18;
+        document.getElementById('cfg-sound-mode').value = config.soundMode || 'silent';
+        toggleCustomSound();
+    }
+    
+    function closeSettings() { document.getElementById('main-modal').style.display = 'none'; }
+    
+    function showTab(name) {
+        ['alerts','calendar','general','dev'].forEach(t => {
+            document.getElementById('stab-'+t).classList.toggle('active', t===name);
+            document.getElementById('tab-'+t).style.display = t===name ? 'block' : 'none';
+        });
+    }
+
+    function renderZonesSelector() {
+        const container = document.getElementById('selected-cities-chips');
+        container.innerHTML = (config.bannerZones || []).map(c => `<div class="zone-chip selected" onclick="removeCityFromBanner('${c}')">${c} <span style="font-size:1.2rem; margin-right:4px;">&times;</span></div>`).join('');
+    }
+
+    function addCityToBanner() {
+        const val = document.getElementById('city-search').value.trim();
+        if (val && !(config.bannerZones || []).includes(val)) {
+            if (!config.bannerZones) config.bannerZones = [];
+            config.bannerZones.push(val);
+            document.getElementById('city-search').value = '';
+            renderZonesSelector();
+        }
+    }
+
+    function removeCityFromBanner(c) {
+        config.bannerZones = config.bannerZones.filter(x => x !== c);
+        renderZonesSelector();
+    }
+
+    function toggleCustomSound() {
+        const val = document.getElementById('cfg-sound-mode').value;
+        document.getElementById('custom-sound-upload').style.display = (val === 'custom') ? 'block' : 'none';
+    }
+
+    function loadCheckboxes() {
+        document.getElementById('tgl-parasha').checked = config.showParasha !== false;
+        document.getElementById('tgl-shabbat').checked = config.showShabbat !== false;
+        document.getElementById('tgl-holidays').checked = config.showHolidays !== false;
+        document.getElementById('tgl-roshchodesh').checked = config.showRoshchodesh !== false;
+        document.getElementById('tgl-fasts').checked = config.showFasts !== false;
+        document.getElementById('tgl-chanukah').checked = config.showChanukah !== false;
+        document.getElementById('tgl-national').checked = config.showNational !== false;
+        document.getElementById('tgl-sunrise').checked = config.showSunrise !== false;
+        document.getElementById('tgl-sunset').checked = config.showSunset !== false;
+        document.getElementById('tgl-dafyomi').checked = config.showDafyomi !== false;
+        document.getElementById('tgl-omer').checked = config.showOmer !== false;
+    }
+    
+    function renderHebcalOpts() {
+        const isHeb = document.getElementById('cfg-cal-source').value === 'hebcal';
+        document.getElementById('hebcal-sub').style.display = isHeb ? 'block' : 'none';
+        if(isHeb) {
+            document.getElementById('candle-chips').innerHTML = [18, 20, 30, 40].map(m => `<div class="sub-chip ${config.hebcalCandleMin===m?'selected':''}" onclick="config.hebcalCandleMin=${m};renderHebcalOpts()">${m} דק'</div>`).join('');
+        }
+    }
+    
+    function saveSettings() {
+        config.city = document.getElementById('cfg-main-city').value;
+        config.calendarSource = document.getElementById('cfg-cal-source').value;
+        config.hebcalCandleMin = document.getElementById('cfg-candle-min').value || 18;
+        config.soundMode = document.getElementById('cfg-sound-mode').value;
+        
+        config.showParasha = document.getElementById('tgl-parasha').checked;
+        config.showShabbat = document.getElementById('tgl-shabbat').checked;
+        config.showHolidays = document.getElementById('tgl-holidays').checked;
+        config.showRoshchodesh = document.getElementById('tgl-roshchodesh').checked;
+        config.showFasts = document.getElementById('tgl-fasts').checked;
+        config.showChanukah = document.getElementById('tgl-chanukah').checked;
+        config.showNational = document.getElementById('tgl-national').checked;
+        config.showSunrise = document.getElementById('tgl-sunrise').checked;
+        config.showSunset = document.getElementById('tgl-sunset').checked;
+        config.showDafyomi = document.getElementById('tgl-dafyomi').checked;
+        config.showOmer = document.getElementById('tgl-omer').checked;
+
+        localStorage.setItem('shabbat_board_v6', JSON.stringify(config));
+        updateData(); 
+        closeSettings();
+    }
+
+    function testAlertPre() { 
+        closeSettings();
+        processAlert({ type: "preAlert", title: "התראה מקדימה", desc: "הנחיה כללית לתושבי האזור להישאר בסמוך למרחבים מוגנים.", cities: ["אריאל", "נתניה"] }); 
+    }
+    function testAlertMultiple() { 
+        closeSettings();
+        processAlert({ type: "missiles", title: "ירי רקטות וטילים", desc: "היכנסו למרחב המוגן ושהו בו 10 דקות", cities: ["תל אביב - יפו", "רמת גן", "אשדוד", "קריית שמונה", "פתח תקווה", "ראשון לציון"] }); 
+    }
+    function testAlertEnd() { 
+        closeSettings();
+        processAlert({ type: "endOfEvent", title: "האירוע הסתיים", desc: "השוהים במרחב המוגן יכולים לצאת.", cities: ["אשדוד", "תל אביב - יפו"] }); 
+    }
+
+    window.onload = () => {
+        const saved = localStorage.getItem('shabbat_board_v6');
+        if(saved) config = Object.assign(config, JSON.parse(saved));
+        document.getElementById('cfg-main-city').value = config.city || "bneibrak";
+        
+        setInterval(() => { document.getElementById('clock').innerText = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false }); }, 1000);
+        updateData(); setInterval(updateData, 600000); initMap();
+    };
+</script>
+</body>
+</html>
