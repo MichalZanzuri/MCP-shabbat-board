@@ -63,7 +63,7 @@ function fetchOrefAlerts() {
     });
 
     req.on('error', (e) => { 
-        // שגיאה בחיבור לאתר פיקוד העורף
+        console.error('❌ שגיאת התחברות לפיקוד העורף (ייתכן שזו חסימת חול/IP):', e.message);
     }); 
     req.setTimeout(2000, () => req.abort());
     req.end();
