@@ -1,0 +1,7 @@
+{
+  "name": "MCP-shabbat-board",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "custom"
+}
