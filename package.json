@@ -1,26 +1,18 @@
 {
   "name": "mcp-shabbat-board",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "build": "echo 'Building for Capacitor...'"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/MichalZanzuri/MCP-shabbat-board.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/MichalZanzuri/MCP-shabbat-board/issues"
-  },
-  "homepage": "https://github.com/MichalZanzuri/MCP-shabbat-board#readme",
   "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
     "express": "^5.2.1",
     "pikud-haoref-api": "^5.0.3",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "cors": "^2.8.5"
   }
 }
