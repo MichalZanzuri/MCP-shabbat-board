@@ -8,8 +8,8 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.use(express.static(__dirname));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'www', 'index.html')));
+app.use(express.static(path.join(__dirname, 'www')));
 
 io.on('connection', (socket) => {
     console.log('🖥️ לוח חכם התחבר לשרת הנתונים בהצלחה!');

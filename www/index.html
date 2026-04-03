@@ -490,7 +490,7 @@
         setTimeout(() => { map.invalidateSize(); }, 500);
     }
 
-    const socket = io("http://localhost:3000");
+    const socket = io("https://mcp-shabbat-board.onrender.com");
     socket.on("connect", () => {
         document.getElementById('socket-dot').classList.add('connected');
         document.getElementById('banner-routine-text').innerText = "מערכת מחוברת: מאזין להתראות";
