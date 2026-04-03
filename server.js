@@ -22,9 +22,9 @@ io.on('connection', (socket) => {
     console.log('🖥️ לוח חכם התחבר לשרת הנתונים בהצלחה!');
 });
 
-console.log('📡 מתחיל להאזין להתראות (מערכת מלאה כולל סיום אירוע והתראה מקדימה)...');
+console.log('📡 מתחיל להאזין להתראות (מערכת זיכרון חכמה ברמת עיר + זיהוי סיום משופר מופעלת)...');
 
-// זיכרון היסטורי למניעת כפילויות ופספוסים
+// הזיכרון שלנו עכשיו שומר כל עיר בנפרד!
 let processedAlertIds = new Set();
 let isFirstLoad = true;
 
@@ -42,28 +42,58 @@ function fetchTzevaAdomAlerts() {
                 const data = JSON.parse(body);
                 if (Array.isArray(data) && data.length > 0) {
                     
+                    // בטעינה הראשונה שומרים את כל הערים הקיימות כדי לא להקפיץ ישן
                     if (isFirstLoad) {
-                        data.forEach(group => processedAlertIds.add(group.id));
+                        data.forEach(group => {
+                            group.alerts.forEach(alert => {
+                                alert.cities.forEach(city => {
+                                    processedAlertIds.add(`${group.id}_${city}_${alert.threat}`);
+                                });
+                            });
+                        });
                         isFirstLoad = false;
                         return;
                     }
 
-                    data.forEach(group => {
-                        if (!processedAlertIds.has(group.id)) {
-                            processedAlertIds.add(group.id); 
-                            
-                            group.alerts.forEach(alert => {
-                                let type = "missiles";
-                                // לוקחים את הכותרת המקורית מה-API אם קיימת, אחרת ברירת מחדל
-                                let title = alert.title || "ירי רקטות וטילים";
+                    let newAlertsToEmit = [];
 
-                                // זיהוי חכם לפי טקסט (התראה מקדימה וסיום אירוע)
-                                if (title.includes("מקדימה")) {
-                                    type = "preAlert";
-                                } else if (title.includes("סתיים") || title.includes("סיום")) {
+                    // מעבר חכם על הנתונים - מחפשים ערים חדשות, גם בתוך אירועים קיימים
+                    data.forEach(group => {
+                        group.alerts.forEach(alert => {
+                            let newCitiesForThisAlert = [];
+
+                            // בודקים כל עיר בנפרד
+                            alert.cities.forEach(city => {
+                                const uniqueKey = `${group.id}_${city}_${alert.threat}`;
+                                if (!processedAlertIds.has(uniqueKey)) {
+                                    processedAlertIds.add(uniqueKey);
+                                    newCitiesForThisAlert.push(city); // מצאנו עיר חדשה!
+                                }
+                            });
+
+                            // אם מצאנו ערים חדשות, מכינים אותן לשידור
+                            if (newCitiesForThisAlert.length > 0) {
+                                let type = "missiles";
+                                
+                                // איסוף כל הטקסט האפשרי מההתראה לחיפוש מילות מפתח
+                                const alertTitle = alert.title || "";
+                                const alertDesc = alert.description || "";
+                                const fullText = (alertTitle + " " + alertDesc).toLowerCase();
+                                
+                                let title = alertTitle || "ירי רקטות וטילים";
+
+                                // זיהוי חכם ורחב יותר לסיום אירוע
+                                if (fullText.includes("סיום") || fullText.includes("סתיים") || fullText.includes("שגרה")) {
                                     type = "endOfEvent";
-                                } else {
-                                    // זיהוי לפי קוד איום לכל שאר סוגי ההתראות
+                                    title = "סיום אירוע / חזרה לשגרה";
+                                } 
+                                // זיהוי התראה מקדימה
+                                else if (fullText.includes("מקדימה") || fullText.includes("הכנה")) {
+                                    type = "preAlert";
+                                    title = alertTitle || "התראה מקדימה";
+                                } 
+                                else {
+                                    // סיווג לפי קוד איום (threat)
                                     switch (alert.threat) {
                                         case 1:
                                             type = "hostileAircraftIntrusion";
@@ -94,43 +124,46 @@ function fetchTzevaAdomAlerts() {
                                             type = "nonConventional";
                                             title = "אירוע לא קונבנציונלי";
                                             break;
-                                        case 10: // התווסף זיהוי של קוד 10!
+                                        case 10:
                                             type = "endOfEvent";
                                             title = "סיום אירוע";
                                             break;
                                         default:
                                             type = "missiles";
-                                            title = "ירי רקטות וטילים";
+                                            title = alertTitle || "ירי רקטות וטילים";
                                     }
                                 }
-                                
-                                console.log(`🚨 אזעקה חדשה זוהתה: ${title} ב-${alert.cities.join(', ')}`);
-                                
-                                io.emit('alert', { 
-                                    type: type, 
-                                    title: title, 
-                                    desc: "", 
-                                    cities: alert.cities 
+
+                                newAlertsToEmit.push({
+                                    type: type,
+                                    title: title,
+                                    desc: alertDesc,
+                                    cities: newCitiesForThisAlert
                                 });
-                            });
-                        }
+                            }
+                        });
                     });
 
-                    // ניקוי זיכרון
-                    if (processedAlertIds.size > 200) {
+                    // משדרים למסך את כל מה שחדש (וגם מדפיסים ללוג כדי שנוכל לעקוב)
+                    newAlertsToEmit.forEach(alertObj => {
+                        console.log(`📡 אזעקה מעובדת ומשודרת: [${alertObj.type}] - ${alertObj.title} ב-${alertObj.cities.join(', ')}`);
+                        io.emit('alert', alertObj);
+                    });
+
+                    // מנקים זיכרון כדי לא לחנוק את השרת (שומרים 1000 ערים אחרונות)
+                    if (processedAlertIds.size > 1000) {
                         const idsArray = Array.from(processedAlertIds);
-                        processedAlertIds = new Set(idsArray.slice(idsArray.length - 100));
+                        processedAlertIds = new Set(idsArray.slice(idsArray.length - 500));
                     }
                 }
             } catch (e) {
-                // התעלמות משגיאות JSON
+                // התעלמות משגיאות רשת/JSON
             }
         });
-    }).on('error', (err) => {
-        // התעלמות משגיאות רשת זמניות
-    });
+    }).on('error', (err) => {});
 }
 
+// דגימה מהירה כל 2 שניות
 setInterval(fetchTzevaAdomAlerts, 2000);
 
 const PORT = process.env.PORT || 3000;
