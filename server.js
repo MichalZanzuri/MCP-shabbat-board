@@ -8,17 +8,12 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// יצירת שרת ה-HTTP
 const server = http.createServer(app);
-const io = new Server(server, { 
-    cors: { origin: "*" } 
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
-// הגדרת תיקיית www כתיקייה סטטית (חשוב עבור קבצי CSS/JS של הלוח)
 const wwwPath = path.join(__dirname, 'www');
 app.use(express.static(wwwPath));
 
-// ניתוב ה-URL הראשי לקובץ index.html שבתוך תיקיית www
 app.get('/', (req, res) => {
     res.sendFile(path.join(wwwPath, 'index.html'));
 });
@@ -31,6 +26,7 @@ io.on('connection', (socket) => {
 console.log('📡 מתחיל להאזין להתראות פיקוד העורף...');
 
 let activeAlerts = new Set();
+let hasCheckedConnection = false; // משתנה כדי לבדוק פעם אחת אם אנחנו חסומים
 
 function fetchOrefAlerts() {
     const options = {
@@ -46,6 +42,18 @@ function fetchOrefAlerts() {
     };
 
     const req = https.request(options, (res) => {
+        // בדיקת חסימה - תודפס רק פעם אחת כדי לא להציף את היומן
+        if (!hasCheckedConnection) {
+            hasCheckedConnection = true;
+            if (res.statusCode === 200) {
+                console.log('✅ חיבור לפיקוד העורף תקין! השרת מקבל נתונים.');
+            } else if (res.statusCode === 403) {
+                console.error('❌ אזהרה: פיקוד העורף חוסם את השרת (שגיאה 403). נדרש מעקף פרוקסי.');
+            } else {
+                console.log(`⚠️ סטטוס חיבור לא ידוע: ${res.statusCode}`);
+            }
+        }
+
         let body = '';
         res.setEncoding('utf8');
         res.on('data', chunk => body += chunk);
@@ -56,16 +64,20 @@ function fetchOrefAlerts() {
                     const alertData = JSON.parse(cleanBody);
                     processRawAlert(alertData);
                 } catch (e) {
-                    // התעלמות משגיאות JSON (בדרך כלל דף ריק)
+                    // התעלמות אם מתקבל HTML (חסימה) במקום JSON
                 }
             }
         });
     });
 
     req.on('error', (e) => { 
-        console.error('❌ שגיאת התחברות לפיקוד העורף (ייתכן שזו חסימת חול/IP):', e.message);
+        if (!hasCheckedConnection) {
+            console.error('❌ שגיאת התחברות (Timeout / רשת):', e.message);
+            hasCheckedConnection = true;
+        }
     }); 
-    req.setTimeout(2000, () => req.abort());
+    
+    req.setTimeout(3000, () => req.abort());
     req.end();
 }
 
@@ -93,14 +105,12 @@ function processRawAlert(alertData) {
                 threatType = catMap[catStr];
             }
 
-            // יצירת מזהה ייחודי כדי לא לשלוח את אותה התראה פעמיים באותו רגע
             const alertId = alert.id || (threatType + "-" + locations.join(','));
 
             if (!activeAlerts.has(alertId)) {
                 activeAlerts.add(alertId);
                 console.log(`🚨 אזעקה פעילה: ${title} ב-${locations.join(', ')}`);
                 
-                // שליחת ההתראה לכל הלוחות המחוברים
                 io.emit('alert', { 
                     type: threatType, 
                     title: title, 
@@ -108,19 +118,15 @@ function processRawAlert(alertData) {
                     cities: locations 
                 });
 
-                // מחיקה מהזיכרון אחרי 3 דקות כדי לאפשר קבלת התראה חדשה באותו מקום
                 setTimeout(() => activeAlerts.delete(alertId), 180000);
             }
         }
     });
 }
 
-// בדיקת התראות כל 2 שניות
 setInterval(fetchOrefAlerts, 2000);
 
-// הגדרת פורט גמיש (חשוב עבור Render/Heroku)
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 השרת עלה בהצלחה ומאזין בפורט ${PORT}`);
-    console.log(`🔗 ניתן לגשת ללוח בכתובת: https://mcp-shabbat-board.onrender.com}`);
 });
