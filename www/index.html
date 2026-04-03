@@ -75,12 +75,13 @@
         .frame-left { flex: 1; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #222; position: relative; min-height: 0;}
         #map { width: 100%; height: 100%; filter: invert(1) hue-rotate(180deg) brightness(0.8); z-index: 1;}
 
-        .alert-card { background: linear-gradient(90deg, #111 0%, rgba(255, 255, 255, 0.03) 100%); border-right: 6px solid var(--red); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: inset -40px 0 40px -40px var(--red); height: fit-content;}
-        .ac-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap;}
-        .ac-threat-line { font-size: clamp(0.9rem, 2vw, 1.2rem); font-weight: 800; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;}
-        .ac-threat-line span.title-text { overflow: hidden; text-overflow: ellipsis; }
-        .ac-time-box { background: #1a1a1a; padding: 4px 8px; border-radius: 6px; font-size: clamp(0.7rem, 1.5vw, 0.85rem); color: #aaa; border: 1px solid #333; display: flex; gap: 4px; font-family: monospace; white-space: nowrap; flex-shrink: 0;}
-        .ac-cities { color: #ccc; font-size: 0.95rem; line-height: 1.4; text-align: right; margin-top: 5px; }
+        /* CSS מתוקן: כרטיסיה שלא נשברת לשורות */
+        .alert-card { background: linear-gradient(90deg, #111 0%, rgba(255, 255, 255, 0.03) 100%); border-right: 6px solid var(--red); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: inset -40px 0 40px -40px var(--red); height: fit-content; min-width: 0; }
+        .ac-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap; width: 100%; }
+        .ac-threat-line { font-size: clamp(1rem, 1.5vw, 1.2rem); font-weight: 800; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+        .ac-threat-line span.title-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+        .ac-time-box { background: #1a1a1a; padding: 4px 8px; border-radius: 6px; font-size: clamp(0.7rem, 1.5vw, 0.85rem); color: #aaa; border: 1px solid #333; display: flex; gap: 4px; font-family: monospace; white-space: nowrap; flex-shrink: 0; }
+        .ac-cities { color: #ccc; font-size: 0.95rem; line-height: 1.4; text-align: right; margin-top: 2px; }
 
         .clear-alerts-btn { display: none; background: #1a1a1a; border: 1px solid #333; color: #777; padding: 10px; border-radius: 8px; justify-content: center; align-items: center; cursor: pointer; transition: 0.3s; flex-shrink: 0; gap: 8px; margin-top: 10px; font-family: 'Assistant', sans-serif; font-weight: 700;}
         .clear-alerts-btn:hover { background: rgba(231, 76, 60, 0.1); color: #e74c3c; border-color: #e74c3c; }
@@ -490,7 +491,7 @@
         setTimeout(() => { map.invalidateSize(); }, 500);
     }
 
-    const socket = io("https://mcp-shabbat-board.onrender.com");
+    const socket = io();
     socket.on("connect", () => {
         document.getElementById('socket-dot').classList.add('connected');
         document.getElementById('banner-routine-text').innerText = "מערכת מחוברת: מאזין להתראות";
