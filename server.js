@@ -22,9 +22,11 @@ io.on('connection', (socket) => {
     console.log('🖥️ לוח חכם התחבר לשרת הנתונים בהצלחה!');
 });
 
-console.log('📡 מתחיל להאזין להתראות (דרך ערוץ צבע אדום פתוח שעוקף את חסימת הענן)...');
+console.log('📡 מתחיל להאזין להתראות (מערכת זיכרון חכמה מופעלת)...');
 
-let lastSeenId = 0;
+// כאן אנחנו שומרים את ההיסטוריה כדי לא לפספס כלום
+let processedAlertIds = new Set();
+let isFirstLoad = true;
 
 function fetchTzevaAdomAlerts() {
     https.get('https://api.tzevaadom.co.il/alerts-history', {
@@ -40,34 +42,29 @@ function fetchTzevaAdomAlerts() {
                 const data = JSON.parse(body);
                 if (Array.isArray(data) && data.length > 0) {
                     
-                    // בטעינה הראשונה של השרת, אנחנו רק שומרים את ה-ID הכי חדש
-                    // כדי לא להקפיץ ללוח אזעקות היסטוריות מאתמול
-                    if (lastSeenId === 0) {
-                        lastSeenId = data[0].id;
+                    // בטעינה הראשונה רק "לומדים" מה היה כדי לא להקפיץ אזעקות עבר
+                    if (isFirstLoad) {
+                        data.forEach(group => processedAlertIds.add(group.id));
+                        isFirstLoad = false;
                         return;
                     }
 
-                    let hasNewAlerts = false;
-
-                    // עוברים על ההתראות שקיבלנו
+                    // עוברים על כל האזעקות
                     data.forEach(group => {
-                        // אם יש מזהה התראה גדול יותר ממה שראינו - זו אזעקה חדשה!
-                        if (group.id > lastSeenId) {
-                            hasNewAlerts = true;
+                        // אם יש פה ID שעוד לא ראינו - זו אזעקה חדשה בוודאות!
+                        if (!processedAlertIds.has(group.id)) {
+                            processedAlertIds.add(group.id); 
+                            
                             group.alerts.forEach(alert => {
                                 let type = "missiles";
                                 let title = "ירי רקטות וטילים";
                                 
-                                // סיווג סוג האיום לפי קוד
                                 if (alert.threat === 1) {
                                     type = "hostileAircraftIntrusion";
                                     title = "חדירת כלי טיס עוין";
                                 } else if (alert.threat === 2 || alert.threat === 5 || alert.threat === 7) {
                                     type = "terroristInfiltration";
                                     title = "חדירת מחבלים";
-                                } else if (alert.threat === 3) {
-                                    type = "earthQuake";
-                                    title = "רעידת אדמה";
                                 }
                                 
                                 console.log(`🚨 אזעקה חדשה זוהתה: ${title} ב-${alert.cities.join(', ')}`);
@@ -82,24 +79,20 @@ function fetchTzevaAdomAlerts() {
                         }
                     });
 
-                    // מעדכנים את ה-ID כדי לא לשלוח את אותה התראה פעמיים
-                    if (hasNewAlerts) {
-                        const maxId = Math.max(...data.map(g => g.id));
-                        if (maxId > lastSeenId) {
-                            lastSeenId = maxId;
-                        }
+                    // מנקים ישנים כדי לא לסתום את הזיכרון של השרת
+                    if (processedAlertIds.size > 200) {
+                        const idsArray = Array.from(processedAlertIds);
+                        processedAlertIds = new Set(idsArray.slice(idsArray.length - 100));
                     }
                 }
             } catch (e) {
-                // מתעלמים משגיאות רשת רגעיות או JSON שבור
+                // התעלמות משגיאות רשת
             }
         });
-    }).on('error', (err) => {
-        console.error('❌ שגיאת רשת במשיכת נתונים:', err.message);
-    });
+    }).on('error', (err) => {});
 }
 
-// דגימה כל 2 שניות
+// דגימה מהירה כל 2 שניות
 setInterval(fetchTzevaAdomAlerts, 2000);
 
 const PORT = process.env.PORT || 3000;
