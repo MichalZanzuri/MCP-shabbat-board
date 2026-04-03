@@ -22,9 +22,8 @@ io.on('connection', (socket) => {
     console.log('🖥️ לוח חכם התחבר לשרת הנתונים בהצלחה!');
 });
 
-console.log('📡 מתחיל להאזין להתראות (מערכת זיכרון חכמה, מורחבת ומוגנת מופעלת)...');
+console.log('📡 מתחיל להאזין להתראות (גרסה סופית: זיכרון מורחב, הגנת טקסט, וזיהוי מלא)...');
 
-// הזיכרון שלנו עכשיו שומר כל עיר בנפרד!
 let processedAlertIds = new Set();
 let isFirstLoad = true;
 
@@ -35,14 +34,19 @@ function fetchTzevaAdomAlerts() {
             'Accept': 'application/json'
         }
     }, (res) => {
-        let body = '';
-        res.on('data', chunk => body += chunk);
+        // מנגנון הגנה: איסוף החבילות כדי שהעברית לא תישבר באמצע משפט
+        const chunks = []; 
+        
+        res.on('data', chunk => chunks.push(chunk));
+        
         res.on('end', () => {
             try {
+                const body = Buffer.concat(chunks).toString('utf8');
                 const data = JSON.parse(body);
+                
                 if (Array.isArray(data) && data.length > 0) {
                     
-                    // בטעינה הראשונה שומרים את כל הערים הקיימות (מה-24 שעות האחרונות)
+                    // טעינה ראשונה - שומרים הכל כדי לא להקפיץ היסטוריה
                     if (isFirstLoad) {
                         data.forEach(group => {
                             group.alerts.forEach(alert => {
@@ -57,12 +61,11 @@ function fetchTzevaAdomAlerts() {
 
                     let newAlertsToEmit = [];
 
-                    // מעבר חכם על הנתונים - מחפשים רק מה שבאמת חדש
                     data.forEach(group => {
                         group.alerts.forEach(alert => {
                             let newCitiesForThisAlert = [];
 
-                            // בודקים כל עיר בנפרד
+                            // בדיקה ברמת העיר כדי לא לפספס ערים שנוספו למטח קיים
                             alert.cities.forEach(city => {
                                 const uniqueKey = `${group.id}_${city}_${alert.threat}`;
                                 if (!processedAlertIds.has(uniqueKey)) {
@@ -78,6 +81,7 @@ function fetchTzevaAdomAlerts() {
                                 const fullText = (alertTitle + " " + alertDesc).toLowerCase();
                                 let title = alertTitle || "ירי רקטות וטילים";
 
+                                // זיהוי חכם מתוך הטקסט לסיום והתראה מקדימה
                                 if (fullText.includes("סיום") || fullText.includes("סתיים") || fullText.includes("שגרה")) {
                                     type = "endOfEvent";
                                     title = "סיום אירוע / חזרה לשגרה";
@@ -87,6 +91,7 @@ function fetchTzevaAdomAlerts() {
                                     title = alertTitle || "התראה מקדימה";
                                 } 
                                 else {
+                                    // זיהוי לפי קוד פיקוד העורף
                                     switch (alert.threat) {
                                         case 1: type = "hostileAircraftIntrusion"; title = "חדירת כלי טיס עוין"; break;
                                         case 2:
@@ -111,24 +116,26 @@ function fetchTzevaAdomAlerts() {
                         });
                     });
 
+                    // שידור למסך
                     newAlertsToEmit.forEach(alertObj => {
-                        console.log(`📡 אזעקה מעובדת ומשודרת: [${alertObj.type}] - ${alertObj.title} ב-${alertObj.cities.join(', ')}`);
+                        console.log(`📡 אזעקה משודרת: [${alertObj.type}] - ${alertObj.title} ב-${alertObj.cities.join(', ')}`);
                         io.emit('alert', alertObj);
                     });
 
-                    // התיקון הגדול: הגדלנו את המחסנית ל-15,000 כדי שהשרת לעולם לא ישכח 
-                    // את התראות האתמול ויקפיץ אותן בטעות שוב
+                    // מנגנון זיכרון עצום (15,000) כדי שהשרת לעולם לא ישכח את היממה האחרונה
                     if (processedAlertIds.size > 15000) {
                         const idsArray = Array.from(processedAlertIds);
                         processedAlertIds = new Set(idsArray.slice(idsArray.length - 5000));
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                // התעלמות שקטה משגיאות כדי לשמור על יציבות
+            }
         });
     }).on('error', (err) => {});
 }
 
-// דגימה מהירה כל 2 שניות
+// דגימה קבועה כל 2 שניות
 setInterval(fetchTzevaAdomAlerts, 2000);
 
 const PORT = process.env.PORT || 3000;

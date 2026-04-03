@@ -280,6 +280,7 @@
         "unknown": { icon: "campaign", color: "#e74c3c" } 
     };
 
+    // המילון המורחב למניעת כרטיסיות נפרדות
     const CITY_REGION_MAP = {
         "גוש דן": ["תל אביב", "רמת גן", "בני ברק", "גבעתיים", "חולון", "בת ים", "אור יהודה", "קריית אונו", "יהוד", "מקוה ישראל"],
         "ירקון": ["פתח תקווה", "ראש העין", "אלעד", "כפר קאסם", "הוד השרון", "רמת השרון", "ג'לג'וליה", "כפר ברא"],
@@ -325,7 +326,7 @@
         return "אזורים נוספים"; 
     }
 
-    // הפונקציה המעודכנת שתמנע את קריסת הכרטיסיות! (מקבצת את כל הלא מוכרים לאחת)
+    // הגנה מקריסת עומס: קיבוץ יישובים לא מוכרים
     function groupCitiesByZone(citiesArray) {
         const groups = {};
         const unknownCities = [];
@@ -347,7 +348,6 @@
             }
         });
 
-        // הגנה מקריסה: כל הערים הלא מוכרות נכנסות יחד
         if (unknownCities.length > 0) {
             groups["אזורים נוספים"] = unknownCities;
         }
@@ -562,7 +562,7 @@
                 let timeText = timeLeft > 0 ? `(זמן התגוננות: ${timeLeft} שניות)` : `(הישארו במרחב המוגן)`;
                 if (type === "preAlert" || type === "endOfEvent") timeText = ""; 
                 
-                // הגנה מפני קריסת הבאנר: מקסימום 3 אזורים ואז 'ועוד...'
+                // הגנה על הבאנר משבירה: מקסימום 3 אזורים
                 let displayZones = uniqueZones.length > 3 ? uniqueZones.slice(0, 3).join(', ') + ' ועוד...' : uniqueZones.join(', ');
                 
                 banner.innerHTML = `<span class="material-symbols-outlined" style="margin-left:10px;font-size:1.8rem;">${uiConfig.icon}</span> ${title}: ${displayZones} <span style="margin-right:10px; font-weight:400; opacity:0.9;">${timeText}</span>`;
@@ -638,7 +638,7 @@
 
         if (type !== "endOfEvent") {
             const alertCoordsList = [];
-            // הגנה מקריסת מפה: מצייר רק את 10 המעגלים הראשונים כדי שהדפדפן לא יקפא
+            // הגנה על המפה: ציור עד 10 מעגלים למניעת תקיעת הזיכרון הגרפי
             const citiesForMap = cities.slice(0, 10); 
             
             citiesForMap.forEach(city => {
@@ -663,7 +663,7 @@
     function openSettings() { 
         document.getElementById('main-modal').style.display = 'flex'; 
         populateDatalist();
-        renderZonesSelector();
+        renderZonesSelector(); // פונקציה תקינה בלי שגיאה
         loadCheckboxes();
         document.getElementById('cfg-candle-min').value = config.hebcalCandleMin || 18;
         document.getElementById('cfg-sound-mode').value = config.soundMode || 'silent';
