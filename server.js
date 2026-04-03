@@ -2,9 +2,12 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const https = require('https'); // חיבור ישיר לפיקוד העורף
+const https = require('https');
+const cors = require('cors'); // הוספה
 
 const app = express();
+app.use(cors()); // הוספה
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
@@ -16,11 +19,10 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => console.log('🖥️ לוח חכם התנתק.'));
 });
 
-console.log('📡 מתחיל להאזין להתראות פיקוד העורף (מנוע ישיר ומהיר)...');
+console.log('📡 מתחיל להאזין להתראות פיקוד העורף...');
 
 let activeAlerts = new Set();
 
-// פונקציה שמושכת ישירות את ה-JSON הרשמי של פיקוד העורף
 function fetchOrefAlerts() {
     const options = {
         hostname: 'www.oref.org.il',
@@ -39,49 +41,37 @@ function fetchOrefAlerts() {
         res.setEncoding('utf8');
         res.on('data', chunk => body += chunk);
         res.on('end', () => {
-            // מנקה את התשובה כדי לוודא שזה JSON תקין
             const cleanBody = body.replace(/^\uFEFF/, '').trim();
             if (cleanBody.length > 0) {
                 try {
                     const alertData = JSON.parse(cleanBody);
                     processRawAlert(alertData);
-                } catch (e) { /* התעלם משגיאות פרסור במקרה של שרת עמוס */ }
+                } catch (e) { }
             }
         });
     });
 
-    req.on('error', () => {}); // התעלם משגיאות רשת זמניות
+    req.on('error', (e) => { console.error('Oref Fetch Error:', e.message); }); 
     req.setTimeout(2000, () => req.abort());
     req.end();
 }
 
 function processRawAlert(alertData) {
-    // פיקוד העורף לפעמים שולח מערך ולפעמים אובייקט בודד, נתייחס להכל כמערך
     const alertsList = Array.isArray(alertData) ? alertData : [alertData];
-    
     alertsList.forEach(alert => {
-        let locations = [];
-        if (alert.data && Array.isArray(alert.data)) {
-            locations = alert.data;
-        }
-        
+        let locations = alert.data || [];
         if (locations.length > 0) {
             let threatType = 'unknown'; 
             const title = alert.title || 'התראה ביטחונית';
             const desc = alert.desc || '';
             const catStr = String(alert.cat || '');
 
-            // מילון כל הקודים הרשמיים של פיקוד העורף
             const catMap = {
                 "1": "missiles", "2": "hostileAircraftIntrusion", 
                 "3": "earthQuake", "4": "radiologicalEvent", 
                 "5": "tsunami", "6": "hazardousMaterials",
                 "7": "terroristInfiltration", "9": "nonConventional",
-                "10": "endOfEvent", "11": "missiles", "13": "preAlert",
-                "101": "drill_missiles", "102": "drill_aircraft",
-                "103": "drill_earthQuake", "104": "drill_radiological",
-                "105": "drill_tsunami", "106": "drill_hazmat",
-                "107": "drill_terrorist"
+                "10": "endOfEvent", "11": "missiles", "13": "preAlert"
             };
 
             if (title.includes("סתיים")) {
@@ -90,30 +80,22 @@ function processRawAlert(alertData) {
                 threatType = catMap[catStr];
             }
 
-            // יצירת תעודת זהות ייחודית לאזעקה כדי לא להציף את המסך
             const alertId = alert.id || (threatType + "-" + locations.join(','));
 
             if (!activeAlerts.has(alertId)) {
                 activeAlerts.add(alertId);
-                console.log(`\n🚨 התראה נתפסה! [קטגוריה: ${catStr}] כותרת: ${title} | ערים: ${locations.join(', ')}`);
-                
-                io.emit('alert', {
-                    type: threatType,
-                    title: title, // הטקסט המקורי של פיקוד העורף
-                    desc: desc,   // הוראות ההתגוננות ("היכנסו למרחב המוגן...")
-                    cities: locations
-                });
-                
-                // מחיקה מהזיכרון אחרי 3 דקות
+                console.log(`🚨 אזעקה: ${title} ב-${locations.join(', ')}`);
+                io.emit('alert', { type: threatType, title: title, desc: desc, cities: locations });
                 setTimeout(() => activeAlerts.delete(alertId), 180000);
             }
         }
     });
 }
 
-// דוגמים את פיקוד העורף כל 2 שניות
 setInterval(fetchOrefAlerts, 2000);
 
-server.listen(3000, () => {
-    console.log('🚀 שרת ההתראות הישיר רץ וממתין ללוח בכתובת: http://localhost:3000');
+// עדכון פורט עבור Render
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 השרת רץ בפורט ${PORT}`);
 });
