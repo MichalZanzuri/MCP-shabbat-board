@@ -633,7 +633,7 @@
     function openSettings() { 
         document.getElementById('main-modal').style.display = 'flex'; 
         populateDatalist();
-        renderSelectedCities();
+        renderZonesSelector();
         loadCheckboxes();
         document.getElementById('cfg-candle-min').value = config.hebcalCandleMin || 18;
         document.getElementById('cfg-sound-mode').value = config.soundMode || 'silent';
