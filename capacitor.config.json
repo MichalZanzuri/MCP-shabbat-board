@@ -1,0 +1,6 @@
+{
+  "appId": "com.michal.mcpboard",
+  "appName": "MCP Shabbat Board",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
