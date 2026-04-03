@@ -60,7 +60,7 @@ function fetchTzevaAdomAlerts() {
                                 // זיהוי חכם לפי טקסט (התראה מקדימה וסיום אירוע)
                                 if (title.includes("מקדימה")) {
                                     type = "preAlert";
-                                } else if (title.includes("סתיים")) {
+                                } else if (title.includes("סתיים") || title.includes("סיום")) {
                                     type = "endOfEvent";
                                 } else {
                                     // זיהוי לפי קוד איום לכל שאר סוגי ההתראות
