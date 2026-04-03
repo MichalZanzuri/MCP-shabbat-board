@@ -22,9 +22,9 @@ io.on('connection', (socket) => {
     console.log('🖥️ לוח חכם התחבר לשרת הנתונים בהצלחה!');
 });
 
-console.log('📡 מתחיל להאזין להתראות (מערכת זיכרון חכמה מופעלת)...');
+console.log('📡 מתחיל להאזין להתראות (מערכת מלאה כולל סיום אירוע והתראה מקדימה)...');
 
-// כאן אנחנו שומרים את ההיסטוריה כדי לא לפספס כלום
+// זיכרון היסטורי למניעת כפילויות ופספוסים
 let processedAlertIds = new Set();
 let isFirstLoad = true;
 
@@ -42,29 +42,62 @@ function fetchTzevaAdomAlerts() {
                 const data = JSON.parse(body);
                 if (Array.isArray(data) && data.length > 0) {
                     
-                    // בטעינה הראשונה רק "לומדים" מה היה כדי לא להקפיץ אזעקות עבר
                     if (isFirstLoad) {
                         data.forEach(group => processedAlertIds.add(group.id));
                         isFirstLoad = false;
                         return;
                     }
 
-                    // עוברים על כל האזעקות
                     data.forEach(group => {
-                        // אם יש פה ID שעוד לא ראינו - זו אזעקה חדשה בוודאות!
                         if (!processedAlertIds.has(group.id)) {
                             processedAlertIds.add(group.id); 
                             
                             group.alerts.forEach(alert => {
                                 let type = "missiles";
-                                let title = "ירי רקטות וטילים";
-                                
-                                if (alert.threat === 1) {
-                                    type = "hostileAircraftIntrusion";
-                                    title = "חדירת כלי טיס עוין";
-                                } else if (alert.threat === 2 || alert.threat === 5 || alert.threat === 7) {
-                                    type = "terroristInfiltration";
-                                    title = "חדירת מחבלים";
+                                // לוקחים את הכותרת המקורית מה-API אם קיימת, אחרת ברירת מחדל
+                                let title = alert.title || "ירי רקטות וטילים";
+
+                                // זיהוי חכם לפי טקסט (התראה מקדימה וסיום אירוע)
+                                if (title.includes("מקדימה")) {
+                                    type = "preAlert";
+                                } else if (title.includes("סתיים")) {
+                                    type = "endOfEvent";
+                                } else {
+                                    // זיהוי לפי קוד איום לכל שאר סוגי ההתראות
+                                    switch (alert.threat) {
+                                        case 1:
+                                            type = "hostileAircraftIntrusion";
+                                            title = "חדירת כלי טיס עוין";
+                                            break;
+                                        case 2:
+                                        case 7:
+                                            type = "terroristInfiltration";
+                                            title = "חדירת מחבלים";
+                                            break;
+                                        case 3:
+                                            type = "earthQuake";
+                                            title = "רעידת אדמה";
+                                            break;
+                                        case 4:
+                                            type = "radiologicalEvent";
+                                            title = "אירוע רדיולוגי";
+                                            break;
+                                        case 5:
+                                            type = "tsunami";
+                                            title = "חשש לצונאמי";
+                                            break;
+                                        case 6:
+                                            type = "hazardousMaterials";
+                                            title = "אירוע חומרים מסוכנים";
+                                            break;
+                                        case 9:
+                                            type = "nonConventional";
+                                            title = "אירוע לא קונבנציונלי";
+                                            break;
+                                        default:
+                                            type = "missiles";
+                                            title = "ירי רקטות וטילים";
+                                    }
                                 }
                                 
                                 console.log(`🚨 אזעקה חדשה זוהתה: ${title} ב-${alert.cities.join(', ')}`);
@@ -79,20 +112,21 @@ function fetchTzevaAdomAlerts() {
                         }
                     });
 
-                    // מנקים ישנים כדי לא לסתום את הזיכרון של השרת
+                    // ניקוי זיכרון
                     if (processedAlertIds.size > 200) {
                         const idsArray = Array.from(processedAlertIds);
                         processedAlertIds = new Set(idsArray.slice(idsArray.length - 100));
                     }
                 }
             } catch (e) {
-                // התעלמות משגיאות רשת
+                // התעלמות משגיאות JSON
             }
         });
-    }).on('error', (err) => {});
+    }).on('error', (err) => {
+        // התעלמות משגיאות רשת זמניות
+    });
 }
 
-// דגימה מהירה כל 2 שניות
 setInterval(fetchTzevaAdomAlerts, 2000);
 
 const PORT = process.env.PORT || 3000;
