@@ -22,7 +22,7 @@ io.on('connection', (socket) => {
     console.log('🖥️ לוח חכם התחבר לשרת הנתונים בהצלחה!');
 });
 
-console.log('📡 מתחיל להאזין להתראות (גרסה סופית: זיכרון מורחב, הגנת טקסט, וזיהוי מלא)...');
+console.log('📡 מתחיל להאזין להתראות (מערכת זיכרון חכמה עם זיהוי שינוי סטטוס)...');
 
 let processedAlertIds = new Set();
 let isFirstLoad = true;
@@ -34,9 +34,7 @@ function fetchTzevaAdomAlerts() {
             'Accept': 'application/json'
         }
     }, (res) => {
-        // מנגנון הגנה: איסוף החבילות כדי שהעברית לא תישבר באמצע משפט
         const chunks = []; 
-        
         res.on('data', chunk => chunks.push(chunk));
         
         res.on('end', () => {
@@ -46,12 +44,18 @@ function fetchTzevaAdomAlerts() {
                 
                 if (Array.isArray(data) && data.length > 0) {
                     
-                    // טעינה ראשונה - שומרים הכל כדי לא להקפיץ היסטוריה
+                    // בטעינה הראשונה שומרים הכל (כולל הסטטוס!) כדי לא להקפיץ ישן
                     if (isFirstLoad) {
                         data.forEach(group => {
                             group.alerts.forEach(alert => {
-                                alert.cities.forEach(city => {
-                                    processedAlertIds.add(`${group.id}_${city}_${alert.threat}`);
+                                const fullText = ((alert.title || "") + " " + (alert.description || "")).toLowerCase();
+                                let isEnd = alert.threat === 10 || fullText.includes("סיום") || fullText.includes("סתיים") || fullText.includes("שגרה") || fullText.includes("הסר חשש") || fullText.includes("הוסר חשש");
+                                let isPre = fullText.includes("מקדימ") || fullText.includes("הכנה");
+                                let statusModifier = isEnd ? "END" : (isPre ? "PRE" : "ACTIVE");
+
+                                let citiesArray = (Array.isArray(alert.cities) && alert.cities.length > 0) ? alert.cities : ["הודעה כללית"];
+                                citiesArray.forEach(city => {
+                                    processedAlertIds.add(`${group.id}_${city}_${alert.threat}_${statusModifier}`);
                                 });
                             });
                         });
@@ -63,11 +67,22 @@ function fetchTzevaAdomAlerts() {
 
                     data.forEach(group => {
                         group.alerts.forEach(alert => {
-                            let newCitiesForThisAlert = [];
+                            const alertTitle = alert.title || "";
+                            const alertDesc = alert.description || "";
+                            const fullText = (alertTitle + " " + alertDesc).toLowerCase();
+                            
+                            // קביעת הסטטוס החדש של האירוע
+                            let isEnd = alert.threat === 10 || fullText.includes("סיום") || fullText.includes("סתיים") || fullText.includes("שגרה") || fullText.includes("הסר חשש") || fullText.includes("הוסר חשש");
+                            let isPre = fullText.includes("מקדימ") || fullText.includes("הכנה");
+                            let statusModifier = isEnd ? "END" : (isPre ? "PRE" : "ACTIVE");
 
-                            // בדיקה ברמת העיר כדי לא לפספס ערים שנוספו למטח קיים
-                            alert.cities.forEach(city => {
-                                const uniqueKey = `${group.id}_${city}_${alert.threat}`;
+                            let newCitiesForThisAlert = [];
+                            // הגנה למקרה שאין עיר ספציפית בהודעה (הודעה כללית)
+                            let citiesArray = (Array.isArray(alert.cities) && alert.cities.length > 0) ? alert.cities : ["הודעה כללית"];
+
+                            citiesArray.forEach(city => {
+                                // המפתח עכשיו כולל את הסטטוס! אם הסטטוס משתנה, זו התראה חדשה.
+                                const uniqueKey = `${group.id}_${city}_${alert.threat}_${statusModifier}`;
                                 if (!processedAlertIds.has(uniqueKey)) {
                                     processedAlertIds.add(uniqueKey);
                                     newCitiesForThisAlert.push(city); 
@@ -76,22 +91,17 @@ function fetchTzevaAdomAlerts() {
 
                             if (newCitiesForThisAlert.length > 0) {
                                 let type = "missiles";
-                                const alertTitle = alert.title || "";
-                                const alertDesc = alert.description || "";
-                                const fullText = (alertTitle + " " + alertDesc).toLowerCase();
                                 let title = alertTitle || "ירי רקטות וטילים";
 
-                                // זיהוי חכם מתוך הטקסט לסיום והתראה מקדימה
-                                if (fullText.includes("סיום") || fullText.includes("סתיים") || fullText.includes("שגרה")) {
+                                if (isEnd) {
                                     type = "endOfEvent";
                                     title = "סיום אירוע / חזרה לשגרה";
                                 } 
-                                else if (fullText.includes("מקדימה") || fullText.includes("הכנה")) {
+                                else if (isPre) {
                                     type = "preAlert";
                                     title = alertTitle || "התראה מקדימה";
                                 } 
                                 else {
-                                    // זיהוי לפי קוד פיקוד העורף
                                     switch (alert.threat) {
                                         case 1: type = "hostileAircraftIntrusion"; title = "חדירת כלי טיס עוין"; break;
                                         case 2:
@@ -116,26 +126,21 @@ function fetchTzevaAdomAlerts() {
                         });
                     });
 
-                    // שידור למסך
                     newAlertsToEmit.forEach(alertObj => {
-                        console.log(`📡 אזעקה משודרת: [${alertObj.type}] - ${alertObj.title} ב-${alertObj.cities.join(', ')}`);
+                        console.log(`📡 אזעקה מעובדת ומשודרת: [${alertObj.type}] - ${alertObj.title} ב-${alertObj.cities.join(', ')}`);
                         io.emit('alert', alertObj);
                     });
 
-                    // מנגנון זיכרון עצום (15,000) כדי שהשרת לעולם לא ישכח את היממה האחרונה
                     if (processedAlertIds.size > 15000) {
                         const idsArray = Array.from(processedAlertIds);
                         processedAlertIds = new Set(idsArray.slice(idsArray.length - 5000));
                     }
                 }
-            } catch (e) {
-                // התעלמות שקטה משגיאות כדי לשמור על יציבות
-            }
+            } catch (e) {}
         });
     }).on('error', (err) => {});
 }
 
-// דגימה קבועה כל 2 שניות
 setInterval(fetchTzevaAdomAlerts, 2000);
 
 const PORT = process.env.PORT || 3000;
